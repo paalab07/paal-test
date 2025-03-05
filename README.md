@@ -286,16 +286,4 @@ How It All Works
 *   **Backup and Restore:** The backup script leverages MongoDB’s `mongodump` and `mongorestore` commands to maintain a consistent dataset across local machines, ensuring every developer works with the same data.
 *   **Version Control:** Always commit your changes to your local development branch (`localDev`) and avoid pushing directly to `main` or the default branch.
 
-Final Notes
------------
 
-With this setup, you should be able to:
-
-*   Clone the repository.
-*   Create and switch to your `localDev` branch.
-*   Configure your environment using `.env`.
-*   Launch MongoDB with a secure replica set configuration via Docker Compose.
-*   Run both frontend and backend development servers with live reloading.
-*   Use our backup script to maintain consistent database snapshots.
-
-Happy coding!
