@@ -2,10 +2,10 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
 const FarmSchema = new Schema({
-  name: { type: String, required: true },
-  location: { type: String },
-  // You can either embed barns or reference them
-  barns: [{ type: Schema.Types.ObjectId, ref: 'Barn' }]
-});
+  name: { type: String, required: true, index: true },
+  location: { type: String, required: true },
+  description: { type: String },
+  isActive: { type: Boolean, default: true }
+}, { timestamps: true });
 
 module.exports = mongoose.model('Farm', FarmSchema);

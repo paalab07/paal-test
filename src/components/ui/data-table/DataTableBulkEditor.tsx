@@ -6,9 +6,6 @@ import {
   CommandBarSeperator,
   CommandBarValue,
 } from "@/components/CommandBar"
-// import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/Dialog"
-// import { Input } from "@/components/Input"
-// import { Label } from "@/components/Label"
 import api from "@/lib/axios"
 import { RowSelectionState, Table } from "@tanstack/react-table"
 import { useState } from "react"
@@ -29,7 +26,9 @@ function DataTableBulkEditor<TData>({
   const selectedCount = Object.keys(rowSelection).length
 
   const handleDownload = () => {
-    const selectedData = table.getSelectedRowModel().rows.map(row => row.original)
+    const selectedData = table
+      .getSelectedRowModel()
+      .rows.map((row) => row.original)
     const jsonString = JSON.stringify(selectedData, null, 2)
     const blob = new Blob([jsonString], { type: "application/json" })
     const url = URL.createObjectURL(blob)
@@ -68,14 +67,14 @@ function DataTableBulkEditor<TData>({
   const handleDelete = async () => {
     setIsLoading(true)
     try {
-      const selectedPigs = table.getSelectedRowModel().rows.map(row => 
-        (row.original as any).owner.replace('PIG-', '')
-      )
-      await api.delete(`http://localhost:5005/api/pigs`, {
-        data: { pigIds: selectedPigs }
+      const selectedPigs = table
+        .getSelectedRowModel()
+        .rows.map((row) => (row.original as any).owner.replace("PIG-", ""))
+      await api.delete(`/pigs`, {
+        data: { pigIds: selectedPigs },
       })
     } catch (error) {
-      console.error('Error deleting pigs:', error)
+      console.error("Error deleting pigs:", error)
       // Here you would show an error notification
     } finally {
       setIsLoading(false)
@@ -87,9 +86,7 @@ function DataTableBulkEditor<TData>({
     <>
       <CommandBar open={hasSelectedRows}>
         <CommandBarBar>
-          <CommandBarValue>
-            {selectedCount} selected
-          </CommandBarValue>
+          <CommandBarValue>{selectedCount} selected</CommandBarValue>
           <CommandBarSeperator />
           {/* {selectedCount === 1 && (
             <>
@@ -123,7 +120,7 @@ function DataTableBulkEditor<TData>({
           />
         </CommandBarBar>
       </CommandBar>
-{/*  
+      {/*  
        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent>
           <DialogHeader>

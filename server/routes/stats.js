@@ -1,228 +1,217 @@
+const express = require('express');
+const router = express.Router();
+const mongoose = require('mongoose');
 
+// Get models directly from mongoose
+const Device = mongoose.model('Device');
+const PigBCS = mongoose.model('PigBCS'); // Changed from BCSData to PigBCS
+const PostureData = require("../models/PostureData");
+const TemperatureData = mongoose.model('TemperatureData');
+const Pig = mongoose.model('Pig');
+const Farm = mongoose.model('Farm');
+const Barn = mongoose.model('Barn');
+const Stall = mongoose.model('Stall');
+const PigHealthStatus = require('../models/PigHealthStatus');
+const PigFertility = mongoose.model('PigFertility');
+const PigHeatStatus = mongoose.model('PigHeatStatus');
+const { authenticateJWT, isAdmin } = require('../middleware/authMiddleware');
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// const express = require('express')
-// const router = express.Router()
-// const Device = require('../models/Device')
-// const BCSData = require('../models/BCSData')
-// const PostureData = require('../models/PostureData')
-// const TemperatureData = require('../models/TemperatureData')
-
-// router.get('/', async (req, res) => {
-//   try {
-//     // Get device stats
-//     const devices = await Device.find({})
-//     const onlineDevices = devices.filter(d => d.status === 'online').length
-//     const totalDevices = devices.length
-//     const deviceUsage = totalDevices > 0 ? Math.round((onlineDevices / totalDevices) * 100) : 0
-
-//     // Get latest temperature readings
-//     const latestTemps = await TemperatureData.find({})
-//       .sort({ timestamp: -1 })
-//       .limit(devices.length)
-//     const avgTemp = latestTemps.length > 0 
-//       ? latestTemps.reduce((acc, curr) => acc + curr.temperature, 0) / latestTemps.length 
-//       : 0
-
-//     // Get BCS distribution
-//     const bcsData = await BCSData.find({}).sort({ timestamp: -1 })
-//     const avgBCS = bcsData.length > 0 
-//       ? bcsData.reduce((acc, curr) => acc + curr.bcsScore, 0) / bcsData.length 
-//       : 0
-
-//     // Get posture distribution
-//     const postureData = await PostureData.find({}).sort({ timestamp: -1 })
-//     const postureCounts = postureData.reduce((acc, curr) => {
-//       acc[curr.posture] = (acc[curr.posture] || 0) + 1
-//       return acc
-//     }, {})
-
-//     const totalPostures = postureData.length
-//     const postureDistribution = Object.entries(postureCounts).map(([posture, count]) => ({
-//       posture: Number(posture),
-//       count,
-//       percentage: totalPostures > 0 ? Math.round((count / totalPostures) * 100) : 0
-//     }))
-
-//     res.json({
-//       deviceStats: {
-//         onlineDevices,
-//         totalDevices,
-//         deviceUsage,
-//         averageTemperature: Number(avgTemp.toFixed(1))
-//       },
-//       bcsStats: {
-//         averageBCS: Number(avgBCS.toFixed(1))
-//       },
-//       postureDistribution
-//     })
-//   } catch (error) {
-//     console.error('Error fetching statistics:', error)
-//     res.status(500).json({ error: 'Failed to fetch statistics' })
-//   }
-// })
-
-// module.exports = router
-
-// routes/stats.js
-const express = require('express')
-const router = express.Router()
-const Device = require('../models/Device')
-const BCSData = require('../models/BCSData')
-const PostureData = require('../models/PostureData')
-const TemperatureData = require('../models/TemperatureData')
-const Pig = require('../models/Pig')
-const Farm = require('../models/Farm')
-const Barn = require('../models/Barn')
-const Stall = require('../models/Stall')
-const PigHealth = require('../models/PigHealthStatus')
-const PigFertility = require('../models/PigFertility')
-
-router.get('/', async (req, res) => {
+router.get('/', authenticateJWT, isAdmin, async (req, res) => {
   try {
-    const devices = await Device.find({})
-    const pigs = await Pig.find({})
+    const [
+      deviceAgg,
+      latestTempsAgg,
+      bcsAgg,
+      postureAgg,
+      pigAggregations,
+      pigHealthData,
+      pigFertilityData,
+      pigHeatStatusData,
+      farmCount,
+      barnCount,
+      stallCount
+    ] = await Promise.all([
+      Device.aggregate([
+        {
+          $group: {
+            _id: null,
+            total: { $sum: 1 },
+            online: { $sum: { $cond: [{ $eq: ["$status", "online"] }, 1, 0] } },
+            averageTemperature: { $avg: "$temperature" }
+          }
+        }
+      ]),
+      TemperatureData.aggregate([
+        { $sort: { timestamp: -1 } },
+        { $group: { _id: "$deviceId", temperature: { $first: "$temperature" } } },
+        { $group: { _id: null, avgTemp: { $avg: "$temperature" } } }
+      ]),
+      PigBCS.aggregate([{ $group: { _id: null, avgScore: { $avg: "$score" } } }]),
+      PostureData.aggregate([{ $group: { _id: "$score", count: { $sum: 1 } } }]),
+      Pig.aggregate([
+        {
+          $facet: {
+            stats: [
+              { $group: { _id: null, total: { $sum: 1 }, avgAge: { $avg: "$age" } } }
+            ],
+            perBarn: [
+              { $group: { _id: "$currentLocation.barnId", totalPigs: { $sum: 1 } } },
+              {
+                $lookup: {
+                  from: "barns",
+                  localField: "_id",
+                  foreignField: "_id",
+                  as: "barn"
+                }
+              },
+              { $unwind: { path: "$barn", preserveNullAndEmptyArrays: true } },
+              { $project: { barnId: "$_id", name: "$barn.name", totalPigs: 1 } }
+            ],
+            perStall: [
+              { $group: { _id: "$currentLocation.stallId", totalPigs: { $sum: 1 } } },
+              {
+                $lookup: {
+                  from: "stalls",
+                  localField: "_id",
+                  foreignField: "_id",
+                  as: "stall"
+                }
+              },
+              { $unwind: { path: "$stall", preserveNullAndEmptyArrays: true } },
+              {
+                $lookup: {
+                  from: "barns",
+                  localField: "stall.barnId",
+                  foreignField: "_id",
+                  as: "barn"
+                }
+              },
+              { $unwind: { path: "$barn", preserveNullAndEmptyArrays: true } },
+              { $project: { stallId: "$_id", name: "$stall.name", barnId: "$barn._id", barnName: "$barn.name", totalPigs: 1 } }
+            ]
+          }
+        }
+      ]),
+      PigHealthStatus.aggregate([
+        { $sort: { timestamp: -1 } },
+        { $group: { _id: "$pigId", status: { $first: "$status" } } },
+        { $group: { _id: "$status", count: { $sum: 1 } } }
+      ]),
+      PigFertility.aggregate([
+        { $sort: { timestamp: -1 } },
+        { $group: { _id: "$pigId", status: { $first: "$status" } } },
+        { $group: { _id: "$status", count: { $sum: 1 } } }
+      ]),
+      PigHeatStatus.aggregate([
+        { $sort: { timestamp: -1 } },
+        { $group: { _id: "$pigId", status: { $first: "$status" } } },
+        { $group: { _id: "$status", count: { $sum: 1 } } }
+      ]),
+      Farm.countDocuments({}),
+      Barn.countDocuments({}),
+      Stall.countDocuments({})
+    ]);
 
-    const onlineDevices = devices.filter(d => d.status === 'online').length
-    const totalDevices = devices.length
-    const deviceUsage = totalDevices > 0 ? Math.round((onlineDevices / totalDevices) * 100) : 0
+    const deviceResult = deviceAgg[0] || {};
+    const totalDevices = deviceResult.total || 0;
+    const onlineDevices = deviceResult.online || 0;
+    const avgDeviceTemp = deviceResult.averageTemperature || 0;
+    const deviceUsage = totalDevices > 0 ? Math.round((onlineDevices / totalDevices) * 100) : 0;
 
-    const avgDeviceTemp = devices.length > 0
-      ? devices.reduce((acc, d) => acc + (d.temperature || 0), 0) / devices.length
-      : 0
+    const avgTemp = latestTempsAgg[0]?.avgTemp || 0;
 
-    const latestTemps = await TemperatureData.find({}).sort({ timestamp: -1 })
-    const avgTemp = latestTemps.length
-      ? latestTemps.reduce((acc, curr) => acc + curr.temperature, 0) / latestTemps.length
-      : 0
+    const avgBCS = bcsAgg[0]?.avgScore || 0;
 
-    const bcsData = await BCSData.find({}).sort({ timestamp: -1 })
-    const avgBCS = bcsData.length
-      ? bcsData.reduce((acc, curr) => acc + curr.bcsScore, 0) / bcsData.length
-      : 0
+    const totalPostures = postureAgg.reduce((acc, p) => acc + p.count, 0);
+    const postureDistribution = postureAgg.map(p => ({
+      posture: Number(p._id),
+      count: p.count,
+      percentage: totalPostures > 0 ? Math.round((p.count / totalPostures) * 100) : 0
+    }));
 
-    const postureData = await PostureData.find({})
-    const postureCounts = postureData.reduce((acc, curr) => {
-      acc[curr.posture] = (acc[curr.posture] || 0) + 1
-      return acc
-    }, {})
-
-    const postureDistribution = Object.entries(postureCounts).map(([posture, count]) => ({
-      posture: Number(posture),
-      count,
-      percentage: (count / postureData.length) * 100
-    }))
-
-    const pigHealthData = await PigHealth.aggregate([
-      { $sort: { timestamp: -1 } },
-      { $group: { _id: "$pigId", status: { $first: "$status" } } },
-      { $group: { _id: "$status", count: { $sum: 1 } } }
-    ])
-
-    const pigFertilityData = await PigFertility.aggregate([
-      { $sort: { timestamp: -1 } },
-      { $group: { _id: "$pigId", status: { $first: "$status" } } },
-      { $group: { _id: "$status", count: { $sum: 1 } } }
-    ])
+    const pigAgg = pigAggregations[0] || { stats: [], perBarn: [], perStall: [] };
+    const pigStatsDoc = pigAgg.stats[0] || {};
+    const totalPigs = pigStatsDoc.total || 0;
+    const avgAge = pigStatsDoc.avgAge || 0;
+    const pigsPerBarn = pigAgg.perBarn;
+    const pigsPerStall = pigAgg.perStall;
 
     const healthStats = pigHealthData.reduce((acc, curr) => {
-      acc[curr._id.replace(' ', '')] = curr.count
-      return acc
-    }, {})
-
-    const fertilityStats = pigHealthData.reduce((acc, curr) => {
-      acc[curr._id] = curr.count
-      return acc
-    }, {})
-
-    const fertilityStatuses = ["In-Heat", "Pre-Heat", "Open", "Ready-To-Breed"];
-
-    const pigFertilityAggregated = await PigFertility.aggregate([
-      { $sort: { timestamp: -1 } },
-      { $group: { _id: "$pigId", status: { $first: "$status" } } },
-      { $group: { _id: "$status", count: { $sum: 1 } } },
-      {
-        $unionWith: {
-          coll: "PigFertility", // Ensure collection name is correct
-          pipeline: [
-            { $match: { status: { $nin: fertilityStatuses } } },
-            { $group: { _id: "$status", count: { $sum: 0 } } }, // Add missing statuses with 0 count
-          ],
-        },
-      },
-    ]);
-    
-    const normalizeStatus = (status) => status?.trim().toLowerCase().replace(/\s+/g, "-");
-
-    const pigFertilityStats = pigFertilityAggregated.reduce((acc, curr) => {
-      acc[curr._id.replace(/\s+/g, '')] = curr.count;
+      acc[curr._id.toLowerCase()] = curr.count;
       return acc;
     }, {});
 
+    const fertilityStats = pigFertilityData.reduce((acc, curr) => {
+      acc[curr._id.toLowerCase().replace(/\s+/g, '')] = curr.count;
+      return acc;
+    }, {});
+
+    const pigHeatStats = {
+      totalOpen: pigHeatStatusData.find(h => h._id.toLowerCase() === 'open')?.count || 0,
+      totalBred: pigHeatStatusData.find(h => h._id.toLowerCase() === 'bred')?.count || 0,
+      totalPregnant: pigHeatStatusData.find(h => h._id.toLowerCase() === 'pregnant')?.count || 0,
+      totalFarrowing: pigHeatStatusData.find(h => h._id.toLowerCase() === 'farrowing')?.count || 0,
+      totalWeaning: pigHeatStatusData.find(h => h._id.toLowerCase() === 'weaning')?.count || 0,
+    };
+
+    const barnStats = {};
+    pigsPerBarn.forEach(b => {
+      barnStats[b.name || 'Unknown'] = b.totalPigs;
+    });
+
+    const stallStats = {};
+    pigsPerStall.forEach(s => {
+      const barnName = s.barnName || 'Unknown';
+      if (!stallStats[barnName]) stallStats[barnName] = {};
+      stallStats[barnName][s.name || 'Unknown'] = s.totalPigs;
+    });
+
+    // Prepare response - maintaining the exact same structure as before
     res.json({
       deviceStats: {
         onlineDevices,
-        totalDevices: devices.length,
-        deviceUsage: devices.length ? Math.round((onlineDevices / devices.length) * 100) : 0,
+        totalDevices,
+        deviceUsage,
         averageTemperature: Number(avgDeviceTemp.toFixed(1)),
         latestTemperatureStats: Number(avgTemp.toFixed(1))
       },
       bcsStats: {
-        averageBCS: Number(avgBCS.toFixed(1))
+        averageBCS: Number(avgBCS.toFixed(1)) // Still called averageBCS for frontend compatibility
       },
       postureDistribution,
       pigStats: {
-        totalPigs: pigs.length,
-        averageAge: pigs.length ? Number((pigs.reduce((acc, p) => acc + (p.age || 0), 0) / pigs.length).toFixed(1)) : 0
+        totalPigs: totalPigs,
+        averageAge: Number((avgAge || 0).toFixed(1))
       },
       pigHealthStats: {
-        totalAtRisk: pigHealthData.filter(h => h._id === 'at risk')[0]?.count || 0,
-        totalHealthy: pigHealthData.filter(h => h._id === 'healthy').length,
-        totalCritical: pigHealthData.filter(h => h._id === 'critical').length,
-        totalNoMovement: pigHealthData.filter(h => h._id === 'no movement').length
+        totalAtRisk: healthStats['at risk'] || 0,
+        totalHealthy: healthStats['healthy'] || 0,
+        totalCritical: healthStats['critical'] || 0,
+        totalNoMovement: healthStats['no movement'] || 0
       },
+      pigHeatStats,
+      barnStats,
+      stallStats,
       pigFertilityStats: {
-        InHeat: pigFertilityAggregated.find(f => normalizeStatus(f._id) === "in-heat")?.count || 0,
-        PreHeat: pigFertilityAggregated.find(f => normalizeStatus(f._id) === "pre-heat")?.count || 0,
-        Open: pigFertilityAggregated.find(f => normalizeStatus(f._id) === "open")?.count || 0,
-        ReadyToBreed: pigFertilityAggregated.find(f => normalizeStatus(f._id) === "ready-to-breed")?.count || 0,
+        InHeat: fertilityStats['in-heat'] || 0,
+        PreHeat: fertilityStats['pre-heat'] || 0,
+        Open: fertilityStats['open'] || 0,
+        ReadyToBreed: fertilityStats['ready-to-breed'] || 0,
       },
       farmBarnStallStats: {
-        totalFarms: await Farm.countDocuments({}),
-        totalBarns: await Barn.countDocuments({}),
-        totalStalls: await Stall.countDocuments({})
+        totalFarms: farmCount,
+        totalBarns: barnCount,
+        totalStalls: stallCount
       }
-    })
+    });
 
   } catch (error) {
-    console.error('Error fetching statistics:', error)
-    res.status(500).json({ error: 'Failed to retrieve statistics' })
+    console.error('Error fetching statistics:', error);
+    res.status(500).json({
+      error: 'Failed to retrieve statistics',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
-})
+});
 
-module.exports = router
+module.exports = router;

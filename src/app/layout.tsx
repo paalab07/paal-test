@@ -1,18 +1,28 @@
-import type { Metadata } from "next"
-import { ThemeProvider } from "next-themes"
+import { AuthProvider } from "@/components/AuthProvider";
+import { ClientOnly } from "@/components/ClientOnly";
+import { ConditionalLayout } from "@/components/ConditionalLayout";
+import { SidebarProvider } from "@/components/Sidebar";
+import type { Metadata } from "next";
+import { ThemeProvider } from "next-themes";
+import localFont from "next/font/local";
+import { cookies } from "next/headers";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
-// import { Inter } from "next/font/google"
-import { GeistSans } from "geist/font/sans"
-import "./globals.css"
-import { siteConfig } from "./siteConfig"
+import "./globals.css";
+import { siteConfig } from "./siteConfig";
 
-import { Sidebar } from "@/components/ui/navigation/Sidebar"
 
-// const inter = Inter({
-//   subsets: ["latin"],
-//   display: "swap",
-//   variable: "--font-inter",
-// })
+const geistSans = localFont({
+  src: "./fonts/GeistVF.woff",
+  variable: "--font-geist-sans",
+  weight: "100 900",
+})
+const geistMono = localFont({
+  src: "./fonts/GeistMonoVF.woff",
+  variable: "--font-geist-mono",
+  weight: "100 900",
+})
+
+
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://yoururl.com"),
@@ -37,28 +47,42 @@ export const metadata: Metadata = {
   icons: {
     icon: "/favicon.ico",
   },
-}
+};
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode
+  children: React.ReactNode;
 }>) {
+  const cookieStore = cookies();
+  const defaultOpen = cookieStore.get("sidebar:state")?.value === "true";
+
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className="h-full" suppressHydrationWarning>
       <body
-        className={`${GeistSans.className}  overflow-y-scroll scroll-auto antialiased selection:bg-indigo-100 selection:text-indigo-700 dark:bg-gray-950`}
+        className={`${geistSans.variable} ${geistMono.variable}  h-full overflow-y-scroll scroll-auto antialiased selection:bg-indigo-100 selection:text-indigo-700 dark:bg-gray-950`}
         suppressHydrationWarning
       >
-        <div className="mx-auto max-w-screen-2xl">
-          <NuqsAdapter> 
-          <ThemeProvider defaultTheme="system" attribute="class">
-            <Sidebar />
-            <main className="lg:pl-72">{children}</main>
+
+        <NuqsAdapter>
+
+          <ThemeProvider defaultTheme="light"
+            disableTransitionOnChange
+            attribute="class"
+          >
+
+            <ClientOnly fallback={<div className="w-full">{children}</div>}>
+              <AuthProvider>
+                <SidebarProvider defaultOpen={defaultOpen}>
+                  <ConditionalLayout defaultSidebarOpen={defaultOpen}>
+                    {children}
+                  </ConditionalLayout>
+                </SidebarProvider>
+              </AuthProvider>
+            </ClientOnly>
           </ThemeProvider>
-          </NuqsAdapter> 
-        </div>
+        </NuqsAdapter>
       </body>
     </html>
-  )
+  );
 }

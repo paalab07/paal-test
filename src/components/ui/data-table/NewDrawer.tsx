@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/Select"
+import api from "@/lib/axios"
 import axios from "axios"
 import React, { useEffect, useState } from "react"
 import { PigIdInput } from "./CheckPig"; // Assume this handles checking for duplicate Pig IDs
@@ -43,8 +44,13 @@ type Barn = {
 type Stall = {
   _id: string
   name: string
-  barnId: string
+  barnId: {
+    _id: string
+    name: string
+  }
   farmId: string
+  createdAt: string
+  updatedAt: string
 }
 
 // -------------------------
@@ -94,7 +100,7 @@ const FirstPage = ({ formData, onUpdateForm, farms, barns, stalls }: FirstPagePr
   )
   // Filter stalls based on the selected barn.
   const availableStalls = formData.barn
-    ? stalls.filter((stall) => stall.barnId === formData.barn)
+    ? stalls.filter((stall) => stall.barnId._id === formData.barn)
     : []
   // Get the selected barn (to display its name in stall descriptions).
   const selectedBarn = availableBarns.find((barn) => barn._id === formData.barn)
@@ -106,7 +112,6 @@ const FirstPage = ({ formData, onUpdateForm, farms, barns, stalls }: FirstPagePr
     <>
       <DrawerHeader>
         <DrawerTitle>
-          <p>Add Pig Details</p>
           <span className="text-sm font-normal text-gray-500 dark:text-gray-500">
             Farm, Barn & Stall Information
           </span>
@@ -197,7 +202,7 @@ const SecondPage = ({ formData, onUpdateForm }: SecondPageProps) => {
   const handlePigIdChange = (value: string) => {
     // Update both pigId and tag in the form state.
     onUpdateForm({ pigId: value });
-    onUpdateForm({ tag: value ? `PIG-${value}` : "" }); 
+    onUpdateForm({ tag: value ? `PIG-${value}` : "" });
   };
 
   return (
@@ -341,44 +346,41 @@ export function PigDrawer({ open, onOpenChange }: PigDrawerProps) {
   const [farms, setFarms] = useState<Farm[]>([])
   const [barns, setBarns] = useState<Barn[]>([])
   const [stalls, setStalls] = useState<Stall[]>([])
-
-  // Fetch farms on mount
+  // Fetch farms
   useEffect(() => {
-    axios
-      .get("http://localhost:5005/api/farms")
-      .then((res) => {
-        setFarms(res.data)
-      })
-      .catch((err) => console.error("Error fetching farms:", err))
-  }, [])
+    api.get('/farms')
+      .then((res) => setFarms(res.data))
+      .catch(console.error);
+  }, []);
 
-  // Whenever a farm is selected, fetch barns for that farm.
+  // Fetch barns when farm is selected
   useEffect(() => {
     if (formData.farm) {
-      axios
-        .get(`http://localhost:5005/api/barns?farmId=${formData.farm}`)
-        .then((res) => {
-          setBarns(res.data)
-        })
-        .catch((err) => console.error("Error fetching barns for farm:", err))
+      api.get(`/barns/farm/${formData.farm}`)
+        .then((res) => setBarns(res.data))
+        .catch(console.error);
     } else {
-      setBarns([])
+      setBarns([]);
     }
-  }, [formData.farm])
+  }, [formData.farm]);
 
-  // Fetch stalls on mount
+  // Fetch all stalls
+  // Fetch all stalls
   useEffect(() => {
-    axios
-      .get("http://localhost:5005/api/stalls")
-      .then((res) => {
-        setStalls(res.data)
-      })
-      .catch((err) => console.error("Error fetching stalls:", err))
-  }, [])
+    if (formData.barn) {
+      api.get(`/stalls/barn/${formData.barn}`)
+        .then((res) => setStalls(res.data))
+        .catch(console.error);
+    } else {
+      setStalls([]);
+    }
+  }, [formData.barn]);
 
   const handleUpdateForm = (updates: Partial<PigFormData>) => {
     setFormData((prev) => ({ ...prev, ...updates }))
   }
+
+  console.log(formData.barn);
 
   const handleSubmit = async () => {
     setIsSubmitting(true)
@@ -395,7 +397,7 @@ export function PigDrawer({ open, onOpenChange }: PigDrawerProps) {
           stallId: formData.stall,
         },
       }
-      await axios.post("http://localhost:5005/api/pigs", preparedData)
+      await axios.post("/api/pigs", preparedData)
       console.log("Pig data submitted:", preparedData)
       onOpenChange(false)
     } catch (error) {

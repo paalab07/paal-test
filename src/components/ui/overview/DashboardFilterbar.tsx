@@ -1,13 +1,5 @@
 "use client"
 
-import {
-  Select,
-  SelectContent,
-  SelectItemPeriod,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/Select"
-
 import { Label } from "@/components/Label"
 
 import {
@@ -53,10 +45,9 @@ const periods: Period[] = [
 ]
 
 export const getPeriod = (
-  dateRange: DateRange | undefined,
+  dateRange: DateRange,
   value: PeriodValue,
 ): DateRange | undefined => {
-  if (!dateRange) return undefined
   const from = dateRange.from
   const to = dateRange.to
   switch (value) {
@@ -88,8 +79,8 @@ export const getPeriod = (
 type FilterbarProps = {
   maxDate?: Date
   minDate?: Date
-  selectedDates: DateRange | undefined
-  onDatesChange: (dates: DateRange | undefined) => void
+  selectedDates: DateRange
+  onDatesChange: (dates: DateRange) => void
   selectedPeriod: PeriodValue
   onPeriodChange: (period: PeriodValue) => void
   categories: any[]
@@ -133,31 +124,6 @@ export function Filterbar({
           fromDate={minDate}
           align="start"
         />
-        <span className="hidden text-sm font-medium text-gray-500 sm:block">
-          compared to
-        </span>
-        <Select
-          defaultValue="no-comparison"
-          value={selectedPeriod}
-          onValueChange={(value) => {
-            onPeriodChange(value as PeriodValue)
-          }}
-        >
-          <SelectTrigger className="mt-2 w-full sm:mt-0 sm:w-fit">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {periods.map((period) => (
-              <SelectItemPeriod
-                key={period.value}
-                value={period.value}
-                period={getPeriod(selectedDates, period.value)}
-              >
-                {period.label}
-              </SelectItemPeriod>
-            ))}
-          </SelectContent>
-        </Select>
       </div>
       <Dialog>
         <DialogTrigger asChild>
